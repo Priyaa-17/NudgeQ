@@ -1,0 +1,103 @@
+// Firestore Security Rules for NudgeQuest
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Users collection - users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null; // Allow reading other users for discovery
+    }
+    
+    // User profiles - similar to users but with location privacy
+    match /userProfiles/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && 
+        resource.data.privacy.locationEnabled == true &&
+        resource.data.discoverySettings.enabled == true;
+    }
+    
+    // Quests - read-only for all authenticated users
+    match /quests/{questId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only admins can write (use Cloud Functions)
+    }
+    
+    // User quests - users can manage their own quest progress
+    match /userQuests/{userQuestId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+    }
+    
+    // Missions - users can manage their own missions
+    match /missions/{missionId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+    }
+    
+    // Badges - read-only for all authenticated users
+    match /badges/{badgeId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only admins can write
+    }
+    
+    // User badges - users can read their own badges
+    match /userBadges/{userBadgeId} {
+      allow read: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow write: if false; // Only Cloud Functions can award badges
+    }
+    
+    // Friend requests - users can manage requests they send/receive
+    match /friendRequests/{requestId} {
+      allow read, write: if request.auth != null && 
+        (request.auth.uid == resource.data.senderId || 
+         request.auth.uid == resource.data.receiverId);
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.senderId;
+    }
+    
+    // Matches - users can read matches they're part of
+    match /matches/{matchId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid == resource.data.user1Id || 
+         request.auth.uid == resource.data.user2Id);
+      allow write: if false; // Only Cloud Functions can create matches
+    }
+    
+    // Swipes - users can create their own swipes, read for match checking
+    match /swipes/{swipeId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.swiperId;
+      allow update, delete: if false;
+    }
+    
+    // Races - participants can read race data
+    match /races/{raceId} {
+      allow read: if request.auth != null && 
+        request.auth.uid in resource.data.participants[].userId;
+      allow write: if request.auth != null && 
+        request.auth.uid in resource.data.participants[].userId;
+      allow create: if request.auth != null;
+    }
+    
+    // Power-ups - read-only for all authenticated users
+    match /powerUps/{powerUpId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only admins can write
+    }
+    
+    // User power-ups - users can read their own power-ups
+    match /userPowerUps/{userPowerUpId} {
+      allow read: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow write: if false; // Only Cloud Functions can manage inventory
+    }
+  }
+}
