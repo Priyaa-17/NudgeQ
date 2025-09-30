@@ -8,9 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json",
-    "server": "cd server && npm run dev",
-    "setup": "cd server && npm install && npm run db:generate && npm run db:push"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
     "@stripe/stripe-js": "^4.7.0",
