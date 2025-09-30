@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -18,9 +17,6 @@ dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3001;
-
-// Initialize Prisma
-export const prisma = new PrismaClient();
 
 // Middleware
 app.use(helmet());
@@ -50,13 +46,6 @@ app.get('/api/health', (req, res) => {
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Something went wrong!' });
-});
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('Shutting down gracefully...');
-  await prisma.$disconnect();
-  process.exit(0);
 });
 
 app.listen(port, () => {

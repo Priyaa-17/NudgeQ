@@ -2,9 +2,11 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
-import { prisma } from '../server.js';
 
 const router = express.Router();
+
+// Mock user storage (in production, use a database)
+const users: any[] = [];
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -23,12 +25,7 @@ router.post('/register', async (req, res) => {
     const { email, password, username } = registerSchema.parse(req.body);
 
     // Check if user already exists
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [{ email }, { username }]
-      }
-    });
-
+    const existingUser = users.find(u => u.email === email || u.username === username);
     if (existingUser) {
       return res.status(400).json({ 
         error: existingUser.email === email ? 'Email already registered' : 'Username already taken' 
@@ -38,22 +35,27 @@ router.post('/register', async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user with profile
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: hashedPassword,
-        username,
-        profile: {
-          create: {
-            interests: []
-          }
-        }
-      },
-      include: {
-        profile: true
+    // Create user
+    const user = {
+      id: Date.now().toString(),
+      email,
+      password: hashedPassword,
+      username,
+      xp: 0,
+      level: 1,
+      streak: 0,
+      coins: 100,
+      gems: 0,
+      isPremium: false,
+      profile: {
+        interests: [],
+        locationEnabled: false,
+        discoveryEnabled: true,
+        discoveryRadius: 50
       }
-    });
+    };
+
+    users.push(user);
 
     // Generate JWT
     const token = jwt.sign(
@@ -88,11 +90,7 @@ router.post('/login', async (req, res) => {
     const { email, password } = loginSchema.parse(req.body);
 
     // Find user
-    const user = await prisma.user.findUnique({
-      where: { email },
-      include: { profile: true }
-    });
-
+    const user = users.find(u => u.email === email);
     if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
