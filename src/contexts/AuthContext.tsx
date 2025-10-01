@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
+import { supabase } from '../lib/supabase';
 
 interface User {
   id: string;
@@ -41,34 +42,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setToken(session.access_token);
+      }
       fetchUser();
-    } else {
-      setLoading(false);
-    }
-  }, [token]);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session) {
+          setToken(session.access_token);
+          await fetchUser();
+        } else {
+          setToken(null);
+          setUser(null);
+          setLoading(false);
+        }
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const fetchUser = async () => {
     try {
-      console.log('Fetching user from:', `${API_BASE_URL}/users/me`);
-      const response = await fetch(`${API_BASE_URL}/users/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const userData = await response.json();
-        setUser(userData);
-      } else {
-        console.log('Failed to fetch user, clearing token');
-        localStorage.removeItem('token');
+      const { data: { user }, error } = await supabase.auth.getUser();
+      
+      if (error || !user) {
         setToken(null);
+        return;
       }
+
+      // Fetch user profile
+      const { data: profile, error: profileError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Profile fetch error:', profileError);
+        setToken(null);
+        return;
+      }
+
+      const userData = {
+        id: user.id,
+        email: user.email!,
+        username: profile.username,
+        avatar: profile.avatar,
+        xp: profile.xp,
+        level: profile.level,
+        streak: profile.streak,
+        coins: profile.coins,
+        gems: profile.gems,
+        isPremium: profile.isPremium,
+        profile: profile.profile
+      };
+
+      setUser(userData);
     } catch (error) {
       console.error('Failed to fetch user:', error);
-      localStorage.removeItem('token');
       setToken(null);
     } finally {
       setLoading(false);
@@ -77,90 +114,134 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      console.log('Attempting login to:', `${API_BASE_URL}/auth/login`);
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
       });
 
-      console.log('Login response status:', response.status);
-      
-      if (response.ok) {
-        const { token, user } = await response.json();
-        localStorage.setItem('token', token);
-        setToken(token);
-        setUser(user);
-        toast.success('Welcome back!');
-        return true;
-      } else {
-        let errorMessage = 'Login failed';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-          console.error('Failed to parse error response:', e);
-        }
-        toast.error(errorMessage);
+      if (error) {
+        toast.error(error.message);
         return false;
       }
+
+      if (data.user) {
+        // Fetch user profile from your users table
+        const { data: profile, error: profileError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+
+        if (profileError) {
+          console.error('Profile fetch error:', profileError);
+        }
+
+        const userData = {
+          id: data.user.id,
+          email: data.user.email!,
+          username: profile?.username || data.user.email!.split('@')[0],
+          avatar: profile?.avatar,
+          xp: profile?.xp || 0,
+          level: profile?.level || 1,
+          streak: profile?.streak || 0,
+          coins: profile?.coins || 100,
+          gems: profile?.gems || 0,
+          isPremium: profile?.isPremium || false,
+          profile: profile?.profile || {
+            interests: [],
+            locationEnabled: false,
+            discoveryEnabled: true,
+            discoveryRadius: 50
+          }
+        };
+
+        setUser(userData);
+        setToken(data.session?.access_token || null);
+        toast.success('Welcome back!');
+        return true;
+      }
+      return false;
     } catch (error) {
       console.error('Login network error:', error);
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        toast.error('Cannot connect to server. Please check if the backend is running.');
-      } else {
-        toast.error('Network error. Please try again.');
-      }
+      toast.error('Network error. Please try again.');
       return false;
     }
   };
 
   const register = async (email: string, password: string, username: string): Promise<boolean> => {
     try {
-      console.log('Attempting registration to:', `${API_BASE_URL}/auth/register`);
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify({ email, password, username })
+      // First, sign up with Supabase Auth
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password
       });
 
-      if (response.ok) {
-        const { token, user } = await response.json();
-        localStorage.setItem('token', token);
-        setToken(token);
-        setUser(user);
-        toast.success('Account created successfully!');
-        return true;
-      } else {
-        let errorMessage = 'Registration failed';
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (e) {
-          console.error('Failed to parse error response:', e);
-        }
-        toast.error(errorMessage);
+      if (error) {
+        toast.error(error.message);
         return false;
       }
+
+      if (data.user) {
+        // Create user profile in your users table
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: data.user.id,
+            email: data.user.email,
+            username,
+            xp: 0,
+            level: 1,
+            streak: 0,
+            coins: 100,
+            gems: 0,
+            isPremium: false,
+            profile: {
+              interests: [],
+              locationEnabled: false,
+              discoveryEnabled: true,
+              discoveryRadius: 50
+            }
+          });
+
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          toast.error('Failed to create user profile');
+          return false;
+        }
+
+        const userData = {
+          id: data.user.id,
+          email: data.user.email!,
+          username,
+          xp: 0,
+          level: 1,
+          streak: 0,
+          coins: 100,
+          gems: 0,
+          isPremium: false,
+          profile: {
+            interests: [],
+            locationEnabled: false,
+            discoveryEnabled: true,
+            discoveryRadius: 50
+          }
+        };
+
+        setUser(userData);
+        setToken(data.session?.access_token || null);
+        toast.success('Account created successfully!');
+        return true;
+      }
+      return false;
     } catch (error) {
       console.error('Registration network error:', error);
-      if (error instanceof TypeError && error.message.includes('fetch')) {
-        toast.error('Cannot connect to server. Please check if the backend is running.');
-      } else {
-        toast.error('Network error. Please try again.');
-      }
+      toast.error('Network error. Please try again.');
       return false;
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('token');
+    supabase.auth.signOut();
     setToken(null);
     setUser(null);
     toast.success('Logged out successfully');
