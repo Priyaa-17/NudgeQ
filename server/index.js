@@ -13,6 +13,30 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 // In-memory user storage (replace with database in production)
 const users = [];
 
+// Create a dummy user for testing
+const dummyUser = {
+  id: 'dummy-user-1',
+  email: 'test@example.com',
+  password: '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj/VcSforHFu', // hashed 'password123'
+  username: 'testuser',
+  xp: 150,
+  level: 2,
+  streak: 5,
+  coins: 250,
+  gems: 10,
+  isPremium: false,
+  profile: {
+    interests: ['Productivity', 'Fitness'],
+    bio: 'Quest enthusiast!',
+    locationEnabled: false,
+    discoveryEnabled: true,
+    discoveryRadius: 50
+  },
+  createdAt: new Date().toISOString()
+};
+
+users.push(dummyUser);
+
 // Middleware
 app.use(cors({
   origin: 'http://localhost:5173', // Vite default port
